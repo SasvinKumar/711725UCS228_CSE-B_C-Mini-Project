@@ -26,11 +26,21 @@ void newRecord(FILE *fPtr);
 void deleteRecord(FILE *fPtr);
 void totalBalance(FILE *fPtr);   // NEW FUNCTION
 void averageBalance(FILE *fPtr);
+void displayRecord(FILE *fPtr);
+void depositRecord(FILE *fPtr);
+void withdrawRecord(FILE *fPtr);
+void listActiveAccounts(FILE *fPtr);
+unsigned int getAccountNumber(const char *prompt);
+int readAccount(FILE *fPtr, unsigned int account, struct clientData *client);
+void printAccountHeader(void);
+void printAccount(const struct clientData *client);
 
 int main(int argc, char *argv[])
 {
     FILE *cfPtr;
     unsigned int choice;
+
+    (void)argc;
 
     if ((cfPtr = fopen("credit.dat", "rb+")) == NULL)
     {
@@ -39,7 +49,7 @@ int main(int argc, char *argv[])
     }
 
     // enable user to specify action
-    while ((choice = enterChoice()) != 7)   // CHANGED from 6 to 7
+    while ((choice = enterChoice()) != 11)
     {
         switch (choice)
         {
@@ -60,6 +70,18 @@ int main(int argc, char *argv[])
             break;
         case 6:
             averageBalance(cfPtr);
+            break;
+        case 7:
+            displayRecord(cfPtr);
+            break;
+        case 8:
+            depositRecord(cfPtr);
+            break;
+        case 9:
+            withdrawRecord(cfPtr);
+            break;
+        case 10:
+            listActiveAccounts(cfPtr);
             break;
         default:
             puts("Incorrect choice");
@@ -230,10 +252,60 @@ unsigned int enterChoice(void)
            "4 - delete an account\n"
            "5 - show total balance in bank\n"
            "6 - show average balance\n"
-           "7 - end program\n? ");
+           "7 - search/view an account\n"
+           "8 - deposit amount\n"
+           "9 - withdraw amount\n"
+           "10 - list active accounts\n"
+           "11 - end program\n? ");
 
     scanf("%u", &menuChoice);
     return menuChoice;
+}
+
+unsigned int getAccountNumber(const char *prompt)
+{
+    unsigned int account;
+
+    printf("%s", prompt);
+    scanf("%u", &account);
+
+    if (account < 1 || account > 100)
+    {
+        printf("Invalid account number. Please enter a number from 1 to 100.\n");
+        return 0;
+    }
+
+    return account;
+}
+
+int readAccount(FILE *fPtr, unsigned int account, struct clientData *client)
+{
+    if (account < 1 || account > 100)
+    {
+        return 0;
+    }
+
+    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
+    if (fread(client, sizeof(struct clientData), 1, fPtr) != 1)
+    {
+        return 0;
+    }
+
+    return client->acctNum != 0;
+}
+
+void printAccountHeader(void)
+{
+    printf("%-6s%-16s%-11s%10s\n", "Acct", "Last Name", "First Name", "Balance");
+}
+
+void printAccount(const struct clientData *client)
+{
+    printf("%-6u%-16s%-11s%10.2f\n",
+           client->acctNum,
+           client->lastName,
+           client->firstName,
+           client->balance);
 }
 
 // NEW FUNCTION: TOTAL BALANCE
@@ -284,5 +356,131 @@ void averageBalance(FILE *fPtr)
     else
     {
         printf("\nNo active accounts found.\n");
+    }
+}
+
+void displayRecord(FILE *fPtr)
+{
+    unsigned int account = getAccountNumber("Enter account to view ( 1 - 100 ): ");
+    struct clientData client = {0, "", "", 0.0};
+
+    if (account == 0)
+    {
+        return;
+    }
+
+    if (readAccount(fPtr, account, &client))
+    {
+        printAccountHeader();
+        printAccount(&client);
+    }
+    else
+    {
+        printf("Account #%u has no information.\n", account);
+    }
+}
+
+void depositRecord(FILE *fPtr)
+{
+    unsigned int account = getAccountNumber("Enter account for deposit ( 1 - 100 ): ");
+    double amount;
+    struct clientData client = {0, "", "", 0.0};
+
+    if (account == 0)
+    {
+        return;
+    }
+
+    if (!readAccount(fPtr, account, &client))
+    {
+        printf("Account #%u has no information.\n", account);
+        return;
+    }
+
+    printf("Enter deposit amount: ");
+    scanf("%lf", &amount);
+
+    if (amount <= 0.0)
+    {
+        puts("Deposit amount must be greater than zero.");
+        return;
+    }
+
+    client.balance += amount;
+
+    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
+    fwrite(&client, sizeof(struct clientData), 1, fPtr);
+
+    puts("Deposit successful. Updated account:");
+    printAccountHeader();
+    printAccount(&client);
+}
+
+void withdrawRecord(FILE *fPtr)
+{
+    unsigned int account = getAccountNumber("Enter account for withdrawal ( 1 - 100 ): ");
+    double amount;
+    struct clientData client = {0, "", "", 0.0};
+
+    if (account == 0)
+    {
+        return;
+    }
+
+    if (!readAccount(fPtr, account, &client))
+    {
+        printf("Account #%u has no information.\n", account);
+        return;
+    }
+
+    printf("Enter withdrawal amount: ");
+    scanf("%lf", &amount);
+
+    if (amount <= 0.0)
+    {
+        puts("Withdrawal amount must be greater than zero.");
+        return;
+    }
+
+    if (amount > client.balance)
+    {
+        puts("Insufficient balance. Withdrawal cancelled.");
+        return;
+    }
+
+    client.balance -= amount;
+
+    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
+    fwrite(&client, sizeof(struct clientData), 1, fPtr);
+
+    puts("Withdrawal successful. Updated account:");
+    printAccountHeader();
+    printAccount(&client);
+}
+
+void listActiveAccounts(FILE *fPtr)
+{
+    struct clientData client = {0, "", "", 0.0};
+    int count = 0;
+
+    rewind(fPtr);
+    printAccountHeader();
+
+    while (fread(&client, sizeof(struct clientData), 1, fPtr) == 1)
+    {
+        if (client.acctNum != 0)
+        {
+            printAccount(&client);
+            count++;
+        }
+    }
+
+    if (count == 0)
+    {
+        puts("No active accounts found.");
+    }
+    else
+    {
+        printf("\nTotal active accounts: %d\n", count);
     }
 }
